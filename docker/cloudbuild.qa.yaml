@@ -1,0 +1,38 @@
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  entrypoint: 'bash'
+  args: ['-c', 'docker pull ${_DOCKER_REPO}:builder || exit 0']
+
+- name: 'gcr.io/cloud-builders/docker'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    docker tag ${_DOCKER_REPO}:builder temp
+    docker build --target builder --build-arg CACHE_IMAGE=temp --cache-from temp -f docker/Dockerfile.prod -t ${_DOCKER_REPO}:builder .
+
+- name: 'gcr.io/cloud-builders/docker'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    docker build --target prod --build-arg CACHE_IMAGE=temp --cache-from ${_DOCKER_REPO}:builder -f docker/Dockerfile.prod -t ${_DOCKER_REPO}:$SHORT_SHA -t ${_DOCKER_REPO}:latest .
+
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['push', '${_DOCKER_REPO}:$SHORT_SHA']
+
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['run', '-v', '/var/run/docker.sock:/var/run/docker.sock', '--rm', 'goodwithtech/dockle:latest', '-af', 'database.yml', '-af', 'secret_token.rb', '--exit-code', '0', '--exit-level', 'fatal', '${_DOCKER_REPO}:$SHORT_SHA']
+
+- name: 'gcr.io/cloud-builders/kubectl'
+  args: ['--namespace=${_DEPLOY_NAMESPACE}', 'set', 'image', 'deployments', '-l', 'component=rails', 'store=${_DOCKER_REPO}:$SHORT_SHA']
+  env:
+  - 'CLOUDSDK_COMPUTE_ZONE=${_DEPLOY_ZONE}'
+  - 'CLOUDSDK_CONTAINER_CLUSTER=${_DEPLOY_CLUSTER}'
+
+images:
+- '${_DOCKER_REPO}:$SHORT_SHA'
+- '${_DOCKER_REPO}:latest'
+- '${_DOCKER_REPO}:builder'
+
+timeout: 600s

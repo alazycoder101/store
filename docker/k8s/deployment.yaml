@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rails
+  namespace: store
+  labels:
+    app: store
+    component: rails
+    role: web
+spec:
+  replicas: 1
+  revisionHistoryLimit: 0
+  strategy:
+    rollingUpdate:
+      maxSurge: 50%
+      maxUnavailable: 50%
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app: store
+      component: rails
+      role: web
+  template:
+    metadata:
+      labels:
+        app: store
+        component: rails
+        role: web
+    spec:
+      containers:
+      - name: store
+        image: us.gcr.io/myorg/store
+        imagePullPolicy: Always
+        envFrom:
+        - configMapRef:
+            name: store-cm-v1
+        - secretRef:
+            name: store-enc-key
+        ports:
+        - name: store
+          containerPort: 8081
+          protocol: TCP
+        resources:
+          limits:
+            cpu: 500m
+            memory: 800Mi
+          requests:
+            cpu: 50m
+            memory: 300Mi
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: role
+                  operator: In
+                  values: [ "web" ]
+              topologyKey: kubernetes.io/hostname

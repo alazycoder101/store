@@ -1,0 +1,14 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: puma
+  namespace: store
+  annotations:
+    networking.gke.io/managed-certificates: store-ssl
+    kubernetes.io/ingress.class: "gce"
+spec:
+  defaultBackend:
+    service:
+      name: web
+      port:
+        number: 80

@@ -1,0 +1,8 @@
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: store-ssl
+  namespace: store
+spec:
+  domains:
+    - store.mysite.com

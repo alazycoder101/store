@@ -1,0 +1,66 @@
+ARG RUBY_VERSION=3.1.2-jemalloc
+FROM quay.io/evl.ms/fullstaq-ruby:${RUBY_VERSION}-slim as base
+
+FROM base as builder
+
+RUN apt-get update -qq && \
+    apt-get install -yq --fix-missing --no-install-recommends \
+    build-essential gnupg2 libpq-dev git imagemagick libvips && \
+    apt-get clean && \
+    rm -rf /var/cache/apt/archives/* && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
+    truncate -s 0 /var/log/*log
+
+ARG app=/opt/store
+WORKDIR $app
+
+ENV RAILS_ROOT=$app \
+    RAILS_ENV=${RAILS_ENV:-production}
+
+COPY Gemfile Gemfile.lock ./
+RUN gem install bundler && \
+    bundle config set deployment 'true' && \
+    bundle config set without 'development test' && \
+    bundle install -j4 --retry 3
+
+COPY . ./
+
+RUN rm -rf log/* && \
+    rm -rf tmp/*
+
+# Remove folders not needed in resulting image
+RUN rm -rf docker node_modules spec
+
+############### Build step done ###############
+FROM base as prod
+
+RUN curl -sL https://deb.nodesource.com/setup_16.x | bash - && \
+    apt-get update -qq && \
+    apt-get install -yq --fix-missing --no-install-recommends \
+    libpq-dev libvips imagemagick nodejs && \
+    apt-get clean && \
+    rm -rf /var/cache/apt/archives/* && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
+    truncate -s 0 /var/log/*log
+
+ARG app=/opt/store
+ARG app_user=app
+RUN adduser --disabled-login $app_user
+USER $app_user
+WORKDIR $app
+
+COPY --chown=$app_user --from=builder $app $app
+COPY --from=builder /usr/local/bundle/ /usr/local/bundle/
+
+ARG REVISION
+ENV GIT_REVISION=${REVISION}
+
+ENV RAILS_ROOT=$app \
+    RAILS_ENV=${RAILS_ENV:-production}
+
+RUN SECRET_KEY_BASE=1 bundle exec rails assets:precompile && \
+    rm -rf log/* && \
+    rm -rf tmp/*
+
+EXPOSE 8081
+CMD bundle exec puma -b tcp://0.0.0.0:8081 --pidfile /tmp/puma.pid -S /tmp/puma.state --preload --prune-bundler
